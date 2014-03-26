@@ -1,16 +1,18 @@
--- overgen 0.1.0 by paramat
+-- overgen 0.1.1 by paramat
 -- For latest stable Minetest and back to 0.4.8
 -- Depends default
 -- License: code WTFPL
 
+-- 0.1.1 overgen:stone to prevent grass/trees, no surface node underwater, 
+
 -- Parameters
 
-local YMIN = 6000 -- Upper and lower realm limits
+local YMIN = 6000 -- Approximate realm base, atmosphere top
 local YMAX = 8000
-local TCEN = 7000 -- Terrain centre, average surface level
-local WATY = 7000 -- Approximate water y, is rounded down to near base of chunk
+local TCEN = 7024 -- Terrain centre, average solid surface level
+local WATY = 7024 -- Water surface y
 local TSCA = 128 -- Terrain scale, approximate average height of hills
-local STOT = 0.04 -- Stone threshold, depth of stone surface
+local STOT = 0.04 -- Stone threshold, controls epth of stone below surface
 local STABLE = 2 -- Minimum number of stacked stone nodes in column required to support sand
 
 -- 3D noise for terrain
@@ -18,17 +20,25 @@ local STABLE = 2 -- Minimum number of stacked stone nodes in column required to 
 local np_terrain = {
 	offset = 0,
 	scale = 1,
-	spread = {x=256, y=192, z=256},
+	spread = {x=256, y=192, z=256}, -- largest scale in nodes
 	seed = 5900033,
-	octaves = 5,
-	persist = 0.67
+	octaves = 5, -- number of levels of detail
+	persist = 0.67 -- roughness / crazyness
 }
 
 -- Stuff
 
-stability = {}
+overgen = {}
 
-waty = (80 * math.floor((WATY + 32) / 80)) - 32 + 15
+-- Nodes
+
+minetest.register_node("overgen:stone", {
+	description = "OVG Stone",
+	tiles = {"default_stone.png"},
+	groups = {cracky=3},
+	drop = "default:stone",
+	sounds = default.node_sound_stone_defaults(),
+})
 
 -- On generated function
 
@@ -52,10 +62,11 @@ minetest.register_on_generated(function(minp, maxp, seed)
 	local data = vm:get_data()
 	
 	local c_air = minetest.get_content_id("air")
-	local c_stone = minetest.get_content_id("overgen:stone")
 	local c_sand = minetest.get_content_id("default:sand")
 	local c_desand = minetest.get_content_id("default:desert_sand")
 	local c_water = minetest.get_content_id("default:water_source")
+	
+	local c_ovgstone = minetest.get_content_id("overgen:stone")
 	
 	local sidelen = x1 - x0 + 1
 	local chulens = {x=sidelen, y=sidelen+3, z=sidelen}
@@ -65,48 +76,48 @@ minetest.register_on_generated(function(minp, maxp, seed)
 	local ni = 1
 	local stable = {}
 	local under = {}
-	for z = z0, z1 do -- for each xy plane progressing northwards
-		for y = y0 - 2, y1 + 1 do -- for each x row progressing upwards
-			local vi = area:index(x0, y, z) -- get voxel index for first node in x row
-			for x = x0, x1 do -- for each node do
+	for z = z0, z1 do
+		for y = y0 - 2, y1 + 1 do
+			local vi = area:index(x0, y, z)
+			for x = x0, x1 do
 				local si = x - x0 + 1
 				local grad = (TCEN - y) / TSCA
 				local density = nvals_terrain[ni] + grad
-				if y == y0 - 2 then
-					if density >= 0 then
+				if y == y0 - 2 then -- node layer 2 nodes below chunk, set initial stability table values
+					if density >= 0 then -- if node solid
 						stable[si] = 1
 					else
 						stable[si] = 0
 					end
-				elseif y == y0 - 1 then
-					if density >= 0 then
+				elseif y == y0 - 1 then -- node layer below chunk
+					if density >= 0 then -- if node solid
 						stable[si] = stable[si] + 1
 					end
 				elseif y >= y0 and y <= y1 then
 					if density >= STOT then
-						data[vi] = c_stone
+						data[vi] = c_ovgstone
 						stable[si] = stable[si] + 1
 						under[si] = 0
 					elseif density >= 0 and density < STOT and stable[si] >= STABLE then
 						data[vi] = c_sand
 						under[si] = 1
-					elseif y <= waty then
+					elseif y <= WATY then
 						data[vi] = c_water
 						stable[si] = 0
 						under[si] = 0
-					else
+					else -- air, possible above surface node
 						data[vi] = c_air
-						if under[si] == 1 then
-							local viu = area:index(x, y-1, z)
-							data[viu] = c_desand
+						if under[si] == 1 then -- if air above surface node
+							local viu = area:index(x, y-1, z) -- index of 'under' node
+							data[viu] = c_desand -- replace node below with surface node
 						end
 						stable[si] = 0
 						under[si] = 0
 					end
-				elseif y == y1 + 1 then
-					if density < 0 and under[si] == 1 then
+				elseif y == y1 + 1 then -- plane of nodes above chunk
+					if density < 0 and under[si] == 1 and y >= WATY + 1 then -- if air above surface 
 						local viu = area:index(x, y-1, z)
-						data[viu] = c_desand
+						data[viu] = c_desand -- replace node below with surface node
 					end
 				end
 				ni = ni + 1 -- increment perlinmap noise index
