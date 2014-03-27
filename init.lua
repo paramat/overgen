@@ -1,16 +1,14 @@
--- overgen 0.1.1 by paramat
+-- overgen 0.1.2 by paramat
 -- For latest stable Minetest and back to 0.4.8
 -- Depends default
 -- License: code WTFPL
-
--- 0.1.1 overgen:stone to prevent grass/trees, no surface node underwater, 
 
 -- Parameters
 
 local YMIN = 6000 -- Approximate realm base, atmosphere top
 local YMAX = 8000
-local TCEN = 7024 -- Terrain centre, average solid surface level
-local WATY = 7024 -- Water surface y
+local TCEN = 7016 -- Terrain centre, average solid surface level
+local WATY = 7016 -- Water surface y
 local TSCA = 128 -- Terrain scale, approximate average height of hills
 local STOT = 0.04 -- Stone threshold, controls epth of stone below surface
 local STABLE = 2 -- Minimum number of stacked stone nodes in column required to support sand
@@ -23,7 +21,7 @@ local np_terrain = {
 	spread = {x=256, y=192, z=256}, -- largest scale in nodes
 	seed = 5900033,
 	octaves = 5, -- number of levels of detail
-	persist = 0.67 -- roughness / crazyness
+	persist = 0.67 -- roughness / crazyness, 0.4 = smooth, 0.6 = MT standard
 }
 
 -- Stuff
@@ -35,6 +33,7 @@ overgen = {}
 minetest.register_node("overgen:stone", {
 	description = "OVG Stone",
 	tiles = {"default_stone.png"},
+	is_ground_content = false,
 	groups = {cracky=3},
 	drop = "default:stone",
 	sounds = default.node_sound_stone_defaults(),
@@ -69,29 +68,41 @@ minetest.register_on_generated(function(minp, maxp, seed)
 	local c_ovgstone = minetest.get_content_id("overgen:stone")
 	
 	local sidelen = x1 - x0 + 1
-	local chulens = {x=sidelen, y=sidelen+3, z=sidelen}
-	local minpos = {x=x0, y=y0-2, z=z0}
+	local chulens = {x=sidelen, y=sidelen+2, z=sidelen}
+	local minpos = {x=x0, y=y0-1, z=z0}
 	local nvals_terrain = minetest.get_perlin_map(np_terrain, chulens):get3dMap_flat(minpos)
+	
+	local ungen = false -- ungenerated chunk below?
+	if minetest.get_node({x=x0, y=y0-1, z=z0}).name == "ignore" then
+		ungen = true
+		print ("[overgen] ungenerated chunk below")
+	end
 	
 	local ni = 1
 	local stable = {}
 	local under = {}
 	for z = z0, z1 do
-		for y = y0 - 2, y1 + 1 do
+		for y = y0 - 1, y1 + 1 do
 			local vi = area:index(x0, y, z)
 			for x = x0, x1 do
 				local si = x - x0 + 1
 				local grad = (TCEN - y) / TSCA
 				local density = nvals_terrain[ni] + grad
-				if y == y0 - 2 then -- node layer 2 nodes below chunk, set initial stability table values
-					if density >= 0 then -- if node solid
-						stable[si] = 1
+				if y == y0 - 1 then -- node layer below chunk
+					if ungen then
+						if density >= 0 then -- if node solid
+							stable[si] = STABLE
+						else
+							stable[si] = 0
+						end
 					else
-						stable[si] = 0
-					end
-				elseif y == y0 - 1 then -- node layer below chunk
-					if density >= 0 then -- if node solid
-						stable[si] = stable[si] + 1
+						local nodename = minetest.get_node({x=x,y=y,z=z}).name
+						if nodename == "air"
+						or nodename == "default:water_source" then
+							stable[si] = 0
+						else
+							stable[si] = STABLE
+						end
 					end
 				elseif y >= y0 and y <= y1 then
 					if density >= STOT then
