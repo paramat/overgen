@@ -1,7 +1,9 @@
--- overgen 0.1.2 by paramat
+-- overgen 0.1.3 by paramat
 -- For latest stable Minetest and back to 0.4.8
 -- Depends default
 -- License: code WTFPL
+
+-- Speed increase: use LVM for 'ungen' check and scanning chunk below
 
 -- Parameters
 
@@ -61,6 +63,7 @@ minetest.register_on_generated(function(minp, maxp, seed)
 	local data = vm:get_data()
 	
 	local c_air = minetest.get_content_id("air")
+	local c_ignore = minetest.get_content_id("ignore")
 	local c_sand = minetest.get_content_id("default:sand")
 	local c_desand = minetest.get_content_id("default:desert_sand")
 	local c_water = minetest.get_content_id("default:water_source")
@@ -72,11 +75,8 @@ minetest.register_on_generated(function(minp, maxp, seed)
 	local minpos = {x=x0, y=y0-1, z=z0}
 	local nvals_terrain = minetest.get_perlin_map(np_terrain, chulens):get3dMap_flat(minpos)
 	
-	local ungen = false -- ungenerated chunk below?
-	if minetest.get_node({x=x0, y=y0-1, z=z0}).name == "ignore" then
-		ungen = true
-		print ("[overgen] ungenerated chunk below")
-	end
+	local viu = area:index(x0, y0-1, z0)
+	local ungen = data[viu] == c_ignore
 	
 	local ni = 1
 	local stable = {}
@@ -96,9 +96,9 @@ minetest.register_on_generated(function(minp, maxp, seed)
 							stable[si] = 0
 						end
 					else
-						local nodename = minetest.get_node({x=x,y=y,z=z}).name
-						if nodename == "air"
-						or nodename == "default:water_source" then
+						local nodid = data[vi]
+						if nodid == c_air
+						or nodid == c_water then
 							stable[si] = 0
 						else
 							stable[si] = STABLE
